@@ -14,51 +14,66 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-function chamarComLimite(promessa, ms = 12000) {
+function aguardar(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function comTimeout(promessa, ms = 12000) {
   return Promise.race([
     promessa,
     new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Tempo limite excedido na resposta da IA.')), ms)
+      setTimeout(() => reject(new Error('Tempo limite excedido.')), ms)
     ),
   ]);
 }
 
-async function gerarComRetry(prompt, tentativas = 2) {
-  for (let i = 0; i < tentativas; i++) {
+async function gerarRespostaIA(prompt) {
+  const maxTentativas = 2;
+
+  for (let tentativa = 0; tentativa < maxTentativas; tentativa++) {
     try {
-      return await chamarComLimite(
+      const resposta = await comTimeout(
         ai.models.generateContent({
           model: 'gemini-3.8-flash',
           contents: prompt,
         }),
         12000
       );
+      return resposta.text;
     } catch (err) {
-      const ehSobrecarga = err?.status === 503 || err?.code === 503;
-      if (!ehSobrecarga || i === tentativas - 1) {
-        throw err;
+      const status = err?.status || err?.code;
+      if (status === 429) {
+        const erroCota = new Error('Limite de requisições da cota gratuita atingido.');
+        erroCota.statusCode = 429;
+        throw erroCota;
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
+      if (status === 503 && tentativa < maxTentativas - 1) {
+        await aguardar(1000 * (tentativa + 1));
+        continue;
+      }
+      throw err;
     }
   }
 }
 
 app.post('/api/chat', async (req, res) => {
   try {
-    const { prompt } = req.body;
+    const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
     if (!prompt) {
-      return res.status(400).json({ error: 'Prompt obrigatório.' });
+      return res.status(400).json({ error: 'Digite uma mensagem antes de enviar.' });
     }
 
-    const response = await gerarComRetry(prompt);
-    res.json({ reply: response.text });
+    const reply = await gerarRespostaIA(prompt);
+    return res.json({ reply: reply || 'Sem resposta no momento.' });
   } catch (error) {
     console.error('Erro na API Gemini:', error);
-    res.status(500).json({ error: 'Erro ao processar a resposta da IA.' });
+    if (error?.statusCode === 429) {
+      return res.status(429).json({ error: 'Limite diário de uso da IA atingido.' });
+    }
+    return res.status(500).json({ error: 'Erro ao processar a resposta da IA.' });
   }
 });
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
-a
