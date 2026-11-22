@@ -14,19 +14,31 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-async function gerarComRetry(prompt, tentativas = 6) {
+function chamarComLimite(promessa, ms = 12000) {
+  return Promise.race([
+    promessa,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Tempo limite excedido na resposta da IA.')), ms)
+    ),
+  ]);
+}
+
+async function gerarComRetry(prompt, tentativas = 2) {
   for (let i = 0; i < tentativas; i++) {
     try {
-      return await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-      });
+      return await chamarComLimite(
+        ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+        }),
+        12000
+      );
     } catch (err) {
       const ehSobrecarga = err?.status === 503 || err?.code === 503;
       if (!ehSobrecarga || i === tentativas - 1) {
         throw err;
       }
-      await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 1000 * (i + 1)));
     }
   }
 }
@@ -49,3 +61,4 @@ app.post('/api/chat', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
+a
