@@ -1,0 +1,195 @@
+cat << 'EOF' > public/index.html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terminal Gemini</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: monospace;
+      background: #0d1117;
+      color: #e6edf3;
+      display: flex;
+      justify-content: center;
+      padding: 16px;
+    }
+    .terminal {
+      width: 100%;
+      max-width: 820px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 8px;
+      gap: 8px;
+    }
+    .status-badge {
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .log {
+      min-height: 320px;
+      max-height: 460px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .msg-user { color: #58a6ff; }
+    .msg-ai { color: #7ee787; }
+    .msg-err { color: #f85149; }
+    .meta { font-size: 11px; color: #8b949e; }
+    form { display: flex; flex-direction: column; gap: 8px; }
+    textarea {
+      width: 100%;
+      min-height: 76px;
+      background: #0d1117;
+      color: #e6edf3;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 10px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    .actions { display: flex; gap: 8px; justify-content: flex-end; }
+    button {
+      background: #238636;
+      color: #ffffff;
+      border: 1px solid #2ea043;
+      border-radius: 6px;
+      padding: 8px 14px;
+      font-family: monospace;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #21262d;
+      border-color: #30363d;
+      color: #c9d1d9;
+    }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="terminal">
+    <div class="topbar">
+      <div>
+        <strong>GEMINI // TERMINAL</strong>
+        <div id="status" class="status-badge">Verificando servidor...</div>
+      </div>
+      <button type="button" id="btn-limpar" class="secondary">Limpar tela</button>
+    </div>
+    <div id="log" class="log"></div>
+    <form id="form-terminal">
+      <textarea id="prompt" placeholder="Digite o comando ou pergunta... (Enter envia, Shift+Enter quebra linha)" required></textarea>
+      <div class="actions">
+        <button type="submit" id="btn-enviar">Executar</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    const logEl = document.getElementById("log");
+    const statusEl = document.getElementById("status");
+    const formEl = document.getElementById("form-terminal");
+    const promptEl = document.getElementById("prompt");
+    const btnEnviar = document.getElementById("btn-enviar");
+    const btnLimpar = document.getElementById("btn-limpar");
+    const historico = [];
+
+    function adicionarLinha(classe, prefixo, texto, hora) {
+      const box = document.createElement("div");
+      box.className = classe;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = `[${hora || new Date().toLocaleTimeString("pt-BR")}] ${prefixo}`;
+      const corpo = document.createElement("div");
+      corpo.textContent = texto;
+      box.appendChild(meta);
+      box.appendChild(corpo);
+      logEl.appendChild(box);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    async function verificarStatus() {
+      try {
+        const res = await fetch("/api/status");
+        const data = await res.json();
+        statusEl.textContent = data.chaveConfigurada
+          ? "Servidor online • GEMINI_API_KEY ativa"
+          : "Servidor online • GEMINI_API_KEY ausente";
+      } catch {
+        statusEl.textContent = "Falha ao verificar status do servidor";
+      }
+    }
+
+    btnLimpar.addEventListener("click", () => {
+      logEl.innerHTML = "";
+      historico.length = 0;
+    });
+
+    promptEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        formEl.requestSubmit();
+      }
+    });
+
+    formEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const texto = promptEl.value.trim();
+      if (!texto || btnEnviar.disabled) return;
+
+      adicionarLinha("msg-user", "VOCÊ", texto);
+      promptEl.value = "";
+      btnEnviar.disabled = true;
+
+      try {
+        const res = await fetch("/api/consulta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt: texto, historico }),
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          adicionarLinha("msg-err", "ERRO", data.error || "Falha na resposta.");
+          return;
+        }
+
+        const horaResp = data.timestamp
+          ? new Date(data.timestamp).toLocaleTimeString("pt-BR")
+          : undefined;
+        adicionarLinha("msg-ai", "GEMINI", data.resposta || "", horaResp);
+        historico.push({ role: "user", text: texto });
+        historico.push({ role: "model", text: data.resposta || "" });
+      } catch {
+        adicionarLinha("msg-err", "REDE", "Não foi possível alcançar /api/consulta.");
+      } finally {
+        btnEnviar.disabled = false;
+        promptEl.focus();
+      }
+    });
+
+    verificarStatus();
+  </script>
+</body>
+</html>
+EOF
