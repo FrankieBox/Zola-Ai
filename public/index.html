@@ -1,195 +1,138 @@
-cat << 'EOF' > public/index.html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Terminal Gemini</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zola AI</title>
   <style>
-    * { box-sizing: border-box; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      margin: 0;
-      font-family: monospace;
-      background: #0d1117;
-      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #0b141a;
+      color: #e9edef;
       display: flex;
       justify-content: center;
-      padding: 16px;
+      height: 100dvh;
     }
-    .terminal {
+    .app {
       width: 100%;
-      max-width: 820px;
-      background: #161b22;
-      border: 1px solid #30363d;
-      border-radius: 8px;
-      padding: 16px;
+      max-width: 480px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      background-color: #111b21;
+      height: 100dvh;
     }
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #30363d;
-      padding-bottom: 8px;
-      gap: 8px;
+    header {
+      background-color: #202c33;
+      padding: 16px;
+      font-weight: 600;
+      font-size: 1.1rem;
+      border-bottom: 1px solid #2a3942;
     }
-    .status-badge {
-      font-size: 12px;
-      color: #8b949e;
-    }
-    .log {
-      min-height: 320px;
-      max-height: 460px;
+    #messages {
+      flex: 1;
       overflow-y: auto;
-      background: #0d1117;
-      border: 1px solid #21262d;
-      border-radius: 6px;
-      padding: 12px;
+      padding: 16px;
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    .msg {
+      max-width: 82%;
+      padding: 10px 14px;
+      border-radius: 10px;
+      line-height: 1.4;
+      font-size: 0.95rem;
       white-space: pre-wrap;
-      word-break: break-word;
+      word-wrap: break-word;
     }
-    .msg-user { color: #58a6ff; }
-    .msg-ai { color: #7ee787; }
-    .msg-err { color: #f85149; }
-    .meta { font-size: 11px; color: #8b949e; }
-    form { display: flex; flex-direction: column; gap: 8px; }
-    textarea {
-      width: 100%;
-      min-height: 76px;
-      background: #0d1117;
-      color: #e6edf3;
-      border: 1px solid #30363d;
-      border-radius: 6px;
+    .user {
+      align-self: flex-end;
+      background-color: #005c4b;
+    }
+    .ai {
+      align-self: flex-start;
+      background-color: #202c33;
+    }
+    form {
+      display: flex;
       padding: 10px;
-      font-family: monospace;
-      resize: vertical;
+      gap: 8px;
+      background-color: #202c33;
     }
-    .actions { display: flex; gap: 8px; justify-content: flex-end; }
+    input {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 20px;
+      background-color: #2a3942;
+      color: #e9edef;
+      font-size: 1rem;
+      outline: none;
+    }
     button {
-      background: #238636;
-      color: #ffffff;
-      border: 1px solid #2ea043;
-      border-radius: 6px;
-      padding: 8px 14px;
-      font-family: monospace;
+      padding: 0 18px;
+      border: none;
+      border-radius: 20px;
+      background-color: #00a884;
+      color: #111b21;
+      font-weight: 600;
       cursor: pointer;
     }
-    button.secondary {
-      background: #21262d;
-      border-color: #30363d;
-      color: #c9d1d9;
-    }
-    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    button:disabled { opacity: 0.5; }
   </style>
 </head>
 <body>
-  <div class="terminal">
-    <div class="topbar">
-      <div>
-        <strong>GEMINI // TERMINAL</strong>
-        <div id="status" class="status-badge">Verificando servidor...</div>
-      </div>
-      <button type="button" id="btn-limpar" class="secondary">Limpar tela</button>
-    </div>
-    <div id="log" class="log"></div>
-    <form id="form-terminal">
-      <textarea id="prompt" placeholder="Digite o comando ou pergunta... (Enter envia, Shift+Enter quebra linha)" required></textarea>
-      <div class="actions">
-        <button type="submit" id="btn-enviar">Executar</button>
-      </div>
+  <div class="app">
+    <header>Zola AI</header>
+    <div id="messages"></div>
+    <form id="chat-form">
+      <input type="text" id="prompt" placeholder="Digite sua mensagem..." autocomplete="off" required>
+      <button type="submit" id="send-btn">Enviar</button>
     </form>
   </div>
 
   <script>
-    const logEl = document.getElementById("log");
-    const statusEl = document.getElementById("status");
-    const formEl = document.getElementById("form-terminal");
-    const promptEl = document.getElementById("prompt");
-    const btnEnviar = document.getElementById("btn-enviar");
-    const btnLimpar = document.getElementById("btn-limpar");
-    const historico = [];
+    const form = document.getElementById('chat-form');
+    const input = document.getElementById('prompt');
+    const messages = document.getElementById('messages');
+    const sendBtn = document.getElementById('send-btn');
 
-    function adicionarLinha(classe, prefixo, texto, hora) {
-      const box = document.createElement("div");
-      box.className = classe;
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.textContent = `[${hora || new Date().toLocaleTimeString("pt-BR")}] ${prefixo}`;
-      const corpo = document.createElement("div");
-      corpo.textContent = texto;
-      box.appendChild(meta);
-      box.appendChild(corpo);
-      logEl.appendChild(box);
-      logEl.scrollTop = logEl.scrollHeight;
+    function addMessage(text, cls) {
+      const div = document.createElement('div');
+      div.className = `msg ${cls}`;
+      div.textContent = text;
+      messages.appendChild(div);
+      messages.scrollTop = messages.scrollHeight;
+      return div;
     }
 
-    async function verificarStatus() {
-      try {
-        const res = await fetch("/api/status");
-        const data = await res.json();
-        statusEl.textContent = data.chaveConfigurada
-          ? "Servidor online • GEMINI_API_KEY ativa"
-          : "Servidor online • GEMINI_API_KEY ausente";
-      } catch {
-        statusEl.textContent = "Falha ao verificar status do servidor";
-      }
-    }
-
-    btnLimpar.addEventListener("click", () => {
-      logEl.innerHTML = "";
-      historico.length = 0;
-    });
-
-    promptEl.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        formEl.requestSubmit();
-      }
-    });
-
-    formEl.addEventListener("submit", async (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const texto = promptEl.value.trim();
-      if (!texto || btnEnviar.disabled) return;
+      const prompt = input.value.trim();
+      if (!prompt) return;
 
-      adicionarLinha("msg-user", "VOCÊ", texto);
-      promptEl.value = "";
-      btnEnviar.disabled = true;
+      addMessage(prompt, 'user');
+      input.value = '';
+      sendBtn.disabled = true;
+
+      const loadingMsg = addMessage('Digitando...', 'ai');
 
       try {
-        const res = await fetch("/api/consulta", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: texto, historico }),
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt })
         });
         const data = await res.json();
-
-        if (!res.ok) {
-          adicionarLinha("msg-err", "ERRO", data.error || "Falha na resposta.");
-          return;
-        }
-
-        const horaResp = data.timestamp
-          ? new Date(data.timestamp).toLocaleTimeString("pt-BR")
-          : undefined;
-        adicionarLinha("msg-ai", "GEMINI", data.resposta || "", horaResp);
-        historico.push({ role: "user", text: texto });
-        historico.push({ role: "model", text: data.resposta || "" });
+        loadingMsg.textContent = data.reply || data.error || 'Sem resposta.';
       } catch {
-        adicionarLinha("msg-err", "REDE", "Não foi possível alcançar /api/consulta.");
+        loadingMsg.textContent = 'Erro de conexão com o servidor.';
       } finally {
-        btnEnviar.disabled = false;
-        promptEl.focus();
+        sendBtn.disabled = false;
+        input.focus();
       }
     });
-
-    verificarStatus();
   </script>
 </body>
 </html>
-EOF
