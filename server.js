@@ -14,7 +14,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-async function gerarComRetry(prompt, tentativas = 3) {
+async function gerarComRetry(prompt, tentativas = 6) {
   for (let i = 0; i < tentativas; i++) {
     try {
       return await ai.models.generateContent({
@@ -26,7 +26,7 @@ async function gerarComRetry(prompt, tentativas = 3) {
       if (!ehSobrecarga || i === tentativas - 1) {
         throw err;
       }
-      await new Promise((resolve) => setTimeout(resolve, 1200 * (i + 1)));
+      await new Promise((resolve) => setTimeout(resolve, 2000 * (i + 1)));
     }
   }
 }
