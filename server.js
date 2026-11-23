@@ -18,7 +18,7 @@ function aguardar(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function comTimeout(promessa, ms = 12000) {
+function comTimeout(promessa, ms = 25000) {
   return Promise.race([
     promessa,
     new Promise((_, reject) =>
@@ -37,7 +37,7 @@ async function gerarRespostaIA(prompt) {
           model: 'gemini-3.8-flash',
           contents: prompt,
         }),
-        12000
+        25000
       );
       return resposta.text;
     } catch (err) {
@@ -48,7 +48,7 @@ async function gerarRespostaIA(prompt) {
         throw erroCota;
       }
       if (status === 503 && tentativa < maxTentativas - 1) {
-        await aguardar(1000 * (tentativa + 1));
+        await aguardar(1500 * (tentativa + 1));
         continue;
       }
       throw err;
@@ -66,7 +66,11 @@ app.post('/api/chat', async (req, res) => {
     const reply = await gerarRespostaIA(prompt);
     return res.json({ reply: reply || 'Sem resposta no momento.' });
   } catch (error) {
-    console.error('Erro na API Gemini:', error);
+    console.error('Erro na API Gemini:', {
+      message: error?.message,
+      status: error?.status || error?.statusCode,
+      code: error?.code,
+    });
     if (error?.statusCode === 429) {
       return res.status(429).json({ error: 'Limite diário de uso da IA atingido.' });
     }
