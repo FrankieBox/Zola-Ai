@@ -48,4 +48,3 @@ app.post('/api/chat', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
-a
