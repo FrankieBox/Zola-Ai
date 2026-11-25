@@ -14,46 +14,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-function aguardar(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function comTimeout(promessa, ms = 25000) {
-  return Promise.race([
-    promessa,
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Tempo limite excedido.')), ms)
-    ),
-  ]);
-}
-
 async function gerarRespostaIA(prompt) {
-  const maxTentativas = 2;
-
-  for (let tentativa = 0; tentativa < maxTentativas; tentativa++) {
-    try {
-      const resposta = await comTimeout(
-        ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: prompt,
-        }),
-        25000
-      );
-      return resposta.text;
-    } catch (err) {
-      const status = err?.status || err?.code;
-      if (status === 429) {
-        const erroCota = new Error('Limite de requisições da cota gratuita atingido.');
-        erroCota.statusCode = 429;
-        throw erroCota;
-      }
-      if (status === 503 && tentativa < maxTentativas - 1) {
-        await aguardar(1500 * (tentativa + 1));
-        continue;
-      }
-      throw err;
-    }
-  }
+  const resposta = await ai.models.generateContent({
+    model: 'gemini-3.8-flash',
+    contents: prompt,
+  });
+  return resposta.text;
 }
 
 app.post('/api/chat', async (req, res) => {
@@ -70,8 +36,9 @@ app.post('/api/chat', async (req, res) => {
       message: error?.message,
       status: error?.status || error?.statusCode,
       code: error?.code,
+      details: error?.details || error?.errorDetails,
     });
-    if (error?.statusCode === 429) {
+    if (error?.status === 429 || error?.statusCode === 429 || error?.code === 429) {
       return res.status(429).json({ error: 'Limite diário de uso da IA atingido.' });
     }
     return res.status(500).json({ error: 'Erro ao processar a resposta da IA.' });
@@ -81,3 +48,4 @@ app.post('/api/chat', async (req, res) => {
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
 });
+a
